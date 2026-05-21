@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>LSA Traductor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface2:  #21262d;
+  --border:    #30363d;
+  --text:      #e6edf3;
+  --text-muted:#7d8590;
+  --accent:    #2ea043;
+  --accent-glow:#2ea04355;
+  --blue:      #1f6feb;
+  --blue-glow: #1f6feb44;
+  --orange:    #f0883e;
+  --red:       #f85149;
+  --yellow:    #d29922;
+  --purple:    #a371f7;
+  --radius:    14px;
+  --radius-sm: 8px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px}
+
+/* ── LAYOUT ── */
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ── HEADER ── */
+#header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+  z-index:20;
+}
+#header h1{
+  font-size:1rem;font-weight:700;letter-spacing:-0.02em;
+  display:flex;align-items:center;gap:8px;
+}
+#header h1 span{color:var(--accent)}
+.mode-tabs{display:flex;gap:4px;background:var(--bg);padding:3px;border-radius:20px}
+.mode-tab{
+  padding:4px 12px;border-radius:16px;font-size:0.72rem;font-weight:600;
+  border:none;cursor:pointer;background:transparent;color:var(--text-muted);
+  transition:all .2s;letter-spacing:.02em;
+}
+.mode-tab.active{background:var(--surface2);color:var(--text);box-shadow:0 1px 3px #0004}
+
+/* ── MAIN AREA ── */
+#main{display:flex;flex:1;overflow:hidden;position:relative}
+
+/* ── CAMERA PANEL ── */
+#camPanel{
+  position:relative;flex:1;background:#000;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+}
+#videoEl{position:absolute;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#overlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+/* Detección visual sobre la cámara */
+#liveResult{
+  position:absolute;top:12px;left:12px;right:12px;
+  display:flex;align-items:center;justify-content:space-between;
+  pointer-events:none;z-index:5;
+}
+#detectedBadge{
+  background:#000a;backdrop-filter:blur(10px);
+  border:1px solid var(--border);
+  border-radius:20px;padding:6px 14px;
+  display:flex;align-items:center;gap:8px;
+  transition:border-color .3s;
+}
+#detectedBadge.match{border-color:var(--accent)}
+#detectedBadge.recording-active{border-color:var(--red);animation:pulse-border 1s infinite}
+#detectedLetter{font-size:1.5rem;font-weight:700;font-family:'DM Mono',monospace;min-width:2ch;text-align:center}
+#detectedLabel{font-size:0.7rem;color:var(--text-muted);max-width:90px;line-height:1.2}
+#confBar{
+  width:50px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;
+}
+#confFill{height:100%;width:0%;background:var(--accent);transition:width .15s;border-radius:3px}
+
+#handStatus{
+  background:#000a;backdrop-filter:blur(10px);
+  border:1px solid var(--border);border-radius:20px;
+  padding:6px 10px;font-size:0.65rem;color:var(--text-muted);
+  display:flex;align-items:center;gap:5px;
+}
+#handDot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);transition:background .3s}
+#handDot.on{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+
+/* Barra de estabilidad sobre la cámara */
+#stabilityWrap{
+  position:absolute;bottom:0;left:0;right:0;height:4px;
+  background:transparent;z-index:5;pointer-events:none;
+}
+#stabilityBar{height:100%;width:0%;background:var(--accent);transition:width .1s linear;box-shadow:0 0 8px var(--accent)}
+
+/* Botón grabar flotante */
+#btnRecordFloat{
+  position:absolute;bottom:16px;right:16px;
+  width:52px;height:52px;border-radius:50%;
+  background:var(--red);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;z-index:10;
+  box-shadow:0 4px 20px #f8514966;
+  transition:transform .15s,background .15s;
+  -webkit-user-select:none;user-select:none;
+}
+#btnRecordFloat:active{transform:scale(.9)}
+#btnRecordFloat.recording{background:#fff;animation:record-pulse 1s infinite}
+#btnRecordFloat .rec-label{
+  position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);
+  font-size:0.58rem;color:var(--text-muted);white-space:nowrap;font-weight:600;
+}
+
+/* Botón confirmar letra */
+#btnConfirm{
+  position:absolute;bottom:16px;left:16px;
+  background:#000a;backdrop-filter:blur(10px);
+  border:1px solid var(--accent);border-radius:20px;
+  padding:8px 16px;font-size:0.8rem;font-weight:600;color:var(--accent);
+  cursor:pointer;z-index:10;transition:all .15s;
+  -webkit-user-select:none;user-select:none;
+}
+#btnConfirm:active{background:var(--accent);color:#000}
+
+/* ── PANEL LATERAL / INFERIOR ── */
+#sidePanel{
+  width:260px;background:var(--surface);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;
+}
+
+/* Mobile: panel abajo */
+@media(max-width:680px){
+  #main{flex-direction:column}
+  #sidePanel{
+    width:100%;height:220px;border-left:none;border-top:1px solid var(--border);
+  }
+  #camPanel{flex:1}
+  #btnRecordFloat{bottom:230px}
+  #btnConfirm{bottom:230px}
+  #stabilityWrap{bottom:4px}
+}
+
+/* ── TEXTO OUTPUT ── */
+#textOutput{
+  flex:1;overflow-y:auto;padding:12px;
+  display:flex;flex-direction:column;justify-content:flex-end;
+}
+#textDisplay{
+  font-size:1.4rem;font-weight:500;line-height:1.4;
+  min-height:2em;word-break:break-word;
+  color:var(--text);
+}
+#textDisplay .cursor{
+  display:inline-block;width:2px;height:1.2em;background:var(--accent);
+  margin-left:2px;vertical-align:text-bottom;animation:blink 1s step-end infinite;
+}
+.text-controls{
+  display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);flex-shrink:0;
+}
+.text-btn{
+  flex:1;padding:7px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--surface2);color:var(--text-muted);font-size:0.72rem;font-weight:600;
+  cursor:pointer;transition:all .15s;letter-spacing:.03em;
+  -webkit-user-select:none;user-select:none;
+}
+.text-btn:active{background:var(--border);color:var(--text)}
+.text-btn.danger{border-color:var(--red);color:var(--red)}
+
+/* ── TOP CANDIDATOS (modo traducción) ── */
+#candidates{
+  padding:8px 10px;border-top:1px solid var(--border);flex-shrink:0;
+}
+#candidates .cand-title{font-size:0.65rem;color:var(--text-muted);letter-spacing:.08em;margin-bottom:6px;text-transform:uppercase}
+#candList{display:flex;flex-direction:column;gap:4px}
+.cand-item{
+  display:flex;align-items:center;gap:8px;padding:5px 8px;
+  background:var(--surface2);border-radius:var(--radius-sm);
+  border:1px solid transparent;transition:border-color .2s;
+}
+.cand-item.top{border-color:var(--accent)}
+.cand-letter{font-family:'DM Mono',monospace;font-weight:700;font-size:0.95rem;min-width:2.2ch}
+.cand-bar-wrap{flex:1;height:5px;background:var(--bg);border-radius:3px;overflow:hidden}
+.cand-bar{height:100%;border-radius:3px;background:var(--accent);transition:width .15s}
+.cand-item:not(.top) .cand-bar{background:var(--text-muted)}
+.cand-pct{font-size:0.65rem;font-family:'DM Mono',monospace;color:var(--text-muted);min-width:3ch;text-align:right}
+
+/* ── MODO GRABACIÓN ── */
+#recordPanel{
+  padding:12px;display:flex;flex-direction:column;gap:8px;flex-shrink:0;
+}
+#recordPanel.hidden{display:none}
+.rec-section-title{
+  font-size:0.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:2px;
+}
+#recNameInput{
+  width:100%;padding:8px 10px;border-radius:var(--radius-sm);
+  border:1px solid var(--border);background:var(--bg);color:var(--text);
+  font-family:'DM Mono',monospace;font-size:0.9rem;font-weight:500;
+  outline:none;transition:border-color .2s;
+}
+#recNameInput:focus{border-color:var(--accent)}
+#recNameInput::placeholder{color:var(--text-muted)}
+.rec-type-row{display:flex;gap:6px}
+.rec-type-btn{
+  flex:1;padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--surface2);color:var(--text-muted);font-size:0.75rem;font-weight:600;
+  cursor:pointer;transition:all .2s;text-align:center;
+}
+.rec-type-btn.selected{border-color:var(--blue);color:var(--blue);background:#1f6feb15}
+#btnStartRecord{
+  width:100%;padding:10px;border-radius:var(--radius-sm);
+  border:none;background:var(--red);color:#fff;
+  font-size:0.85rem;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:all .15s;-webkit-user-select:none;user-select:none;
+}
+#btnStartRecord:active{opacity:.8}
+#btnStartRecord.recording{background:var(--surface2);border:1px solid var(--red);color:var(--red)}
+#recStatus{
+  font-size:0.75rem;color:var(--text-muted);text-align:center;min-height:1.2em;
+}
+#recProgress{height:3px;background:var(--surface2);border-radius:2px;overflow:hidden}
+#recProgressFill{height:100%;width:0%;background:var(--red);transition:width .1s linear}
+
+/* ── DICCIONARIO ── */
+#dictPanel{display:none;flex-direction:column;height:100%}
+#dictPanel.active{display:flex}
+.dict-header{
+  padding:10px 12px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.dict-header span{font-size:0.75rem;color:var(--text-muted)}
+.dict-actions{display:flex;gap:6px}
+.dict-btn{
+  padding:5px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--surface2);color:var(--text-muted);font-size:0.7rem;font-weight:600;
+  cursor:pointer;transition:all .15s;
+}
+.dict-btn:active{background:var(--border)}
+.dict-btn.primary{border-color:var(--blue);color:var(--blue)}
+#dictList{flex:1;overflow-y:auto;padding:8px}
+.dict-item{
+  display:flex;align-items:center;gap:8px;padding:7px 8px;
+  border-radius:var(--radius-sm);border:1px solid var(--border);
+  margin-bottom:4px;background:var(--surface2);
+}
+.dict-item-label{
+  font-family:'DM Mono',monospace;font-weight:700;font-size:0.9rem;flex:1;
+}
+.dict-item-type{
+  font-size:0.6rem;padding:2px 6px;border-radius:10px;font-weight:600;
+}
+.dict-item-type.static{background:#2ea04322;color:var(--accent)}
+.dict-item-type.dynamic{background:#1f6feb22;color:var(--blue)}
+.dict-item-count{font-size:0.65rem;color:var(--text-muted)}
+.dict-item-del{
+  width:22px;height:22px;border-radius:50%;border:none;background:transparent;
+  color:var(--text-muted);cursor:pointer;font-size:0.9rem;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+.dict-item-del:active{background:var(--red);color:#fff}
+.dict-empty{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:30px 12px;line-height:1.8}
+
+/* ── MODAL ── */
+#modal{
+  position:fixed;inset:0;background:#000a;z-index:100;
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+#modal.open{opacity:1;pointer-events:all}
+#modalBox{
+  background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;
+  border:1px solid var(--border);padding:20px;width:100%;max-width:500px;
+  transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
+}
+#modal.open #modalBox{transform:translateY(0)}
+#modalTitle{font-size:1rem;font-weight:700;margin-bottom:6px}
+#modalMsg{font-size:0.85rem;color:var(--text-muted);line-height:1.6;margin-bottom:16px}
+.modal-btns{display:flex;gap:8px}
+.modal-btn{
+  flex:1;padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);font-size:0.85rem;font-weight:600;
+  cursor:pointer;transition:all .15s;text-align:center;
+}
+.modal-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.modal-btn:active{opacity:.8}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:20px;padding:8px 18px;font-size:0.8rem;font-weight:500;
+  z-index:200;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── ONBOARDING ── */
+#onboarding{
+  position:fixed;inset:0;background:var(--bg);z-index:150;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;text-align:center;
+}
+#onboarding h2{font-size:1.6rem;font-weight:700;margin-bottom:8px}
+#onboarding h2 span{color:var(--accent)}
+#onboarding p{color:var(--text-muted);font-size:0.9rem;line-height:1.7;max-width:340px;margin:0 auto 24px}
+#onboarding .features{
+  display:flex;flex-direction:column;gap:10px;width:100%;max-width:340px;margin-bottom:28px;
+}
+.feature-row{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  text-align:left;
+}
+.feature-icon{font-size:1.4rem;flex-shrink:0}
+.feature-text{font-size:0.8rem;line-height:1.4}
+.feature-text strong{display:block;color:var(--text);margin-bottom:1px}
+.feature-text span{color:var(--text-muted)}
+#btnStart{
+  width:100%;max-width:340px;padding:14px;border-radius:var(--radius);
+  border:none;background:var(--accent);color:#fff;font-size:1rem;font-weight:700;
+  cursor:pointer;transition:opacity .15s;
+}
+#btnStart:active{opacity:.8}
+
+/* ── ANIMACIONES ── */
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 var(--red)}50%{box-shadow:0 0 0 4px #f8514933}}
+@keyframes record-pulse{0%,100%{box-shadow:0 4px 20px #f8514966}50%{box-shadow:0 4px 30px #f85149cc}}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ── BOTÓN FLIP CÁMARA ── */
+#btnFlipCam{
+  position:absolute;top:12px;right:12px;
+  width:38px;height:38px;border-radius:50%;
+  background:#000a;backdrop-filter:blur(10px);
+  border:1px solid var(--border);
+  color:var(--text);font-size:1.1rem;
+  cursor:pointer;z-index:10;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s;-webkit-user-select:none;user-select:none;
+}
+#btnFlipCam:active{background:var(--surface2);transform:scale(.9)}
+#btnFlipCam.flipping{animation:spin-once .35s ease}
+@keyframes spin-once{0%{transform:rotate(0deg)}100%{transform:rotate(180deg)}}
+
+/* ── INDICADOR DE CÁMARA ACTIVA ── */
+#camIndicator{
+  position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  background:#000a;backdrop-filter:blur(6px);
+  border:1px solid var(--border);border-radius:20px;
+  padding:4px 10px;font-size:0.6rem;color:var(--text-muted);
+  pointer-events:none;z-index:10;letter-spacing:.06em;
+  transition:opacity .3s;
+}
+
+/* ── FILE INPUT HIDDEN ── */
+#fileInput{display:none}
+</style>
+</head>
+<body>
+
+<!-- ONBOARDING -->
+<div id="onboarding">
+  <h2>LSA <span>Traductor</span></h2>
+  <p>Traducí la Lengua de Señas Argentina a texto en tiempo real usando la cámara de tu dispositivo.</p>
+  <div class="features">
+    <div class="feature-row">
+      <div class="feature-icon">🤚</div>
+      <div class="feature-text">
+        <strong>Gestos estáticos y dinámicos</strong>
+        <span>Reconoce letras, palabras y frases con o sin movimiento</span>
+      </div>
+    </div>
+    <div class="feature-row">
+      <div class="feature-icon">⏺</div>
+      <div class="feature-text">
+        <strong>Grabá tus propias señas</strong>
+        <span>Construí tu diccionario personalizado sin instalar nada</span>
+      </div>
+    </div>
+    <div class="feature-row">
+      <div class="feature-icon">📂</div>
+      <div class="feature-text">
+        <strong>Importá imágenes de referencia</strong>
+        <span>Cargá tus fotos JPG de LSA directamente desde el dispositivo</span>
+      </div>
+    </div>
+  </div>
+  <button id="btnStart" onclick="startApp()">Activar cámara y comenzar</button>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+
+  <!-- HEADER -->
+  <div id="header">
+    <h1>LSA <span>Traductor</span></h1>
+    <div class="mode-tabs">
+      <button class="mode-tab active" onclick="setMode('translate')" id="tabTranslate">Traducir</button>
+      <button class="mode-tab" onclick="setMode('record')" id="tabRecord">Grabar</button>
+      <button class="mode-tab" onclick="setMode('dict')" id="tabDict">Diccionario</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- CÁMARA -->
+    <div id="camPanel">
+      <video id="videoEl" playsinline autoplay muted></video>
+      <canvas id="overlayCanvas"></canvas>
+
+      <!-- Badge de detección -->
+      <div id="liveResult">
+        <div id="detectedBadge">
+          <div id="detectedLetter">—</div>
+          <div>
+            <div id="detectedLabel">Sin seña</div>
+            <div id="confBar"><div id="confFill"></div></div>
+          </div>
+        </div>
+        <div id="handStatus">
+          <div id="handDot"></div>
+          <span id="handStatusText">Buscando mano...</span>
+        </div>
+      </div>
+
+      <!-- Botón flip cámara -->
+      <button id="btnFlipCam" onclick="flipCamera()" title="Cambiar cámara">⟳</button>
+
+      <!-- Indicador cámara activa -->
+      <div id="camIndicator">📷 FRONTAL</div>
+
+      <!-- Barra de estabilidad -->
+      <div id="stabilityWrap"><div id="stabilityBar"></div></div>
+
+      <!-- Botón confirmar (modo traducir) -->
+      <button id="btnConfirm" onclick="confirmLetter()" style="display:none">✓ Confirmar</button>
+
+      <!-- Botón grabar flotante -->
+      <button id="btnRecordFloat" onclick="toggleRecord()" style="display:none">
+        <span id="recIcon">⏺</span>
+        <span class="rec-label" id="recFloatLabel">GRABAR</span>
+      </button>
+    </div>
+
+    <!-- PANEL LATERAL -->
+    <div id="sidePanel">
+
+      <!-- MODO TRADUCIR -->
+      <div id="panelTranslate">
+        <div id="textOutput">
+          <div id="textDisplay"><span class="cursor"></span></div>
+        </div>
+        <div class="text-controls">
+          <button class="text-btn" onclick="addSpace()">Espacio</button>
+          <button class="text-btn" onclick="backspace()">⌫</button>
+          <button class="text-btn danger" onclick="clearText()">Borrar todo</button>
+        </div>
+        <div id="candidates">
+          <div class="cand-title">Candidatos</div>
+          <div id="candList"></div>
+        </div>
+      </div>
+
+      <!-- MODO GRABAR -->
+      <div id="panelRecord" class="hidden">
+        <div id="recordPanel">
+          <div>
+            <div class="rec-section-title">Nombre de la seña</div>
+            <input id="recNameInput" type="text" placeholder="Ej: A, HOLA, GRACIAS..." autocomplete="off" autocapitalize="characters" spellcheck="false">
+          </div>
+          <div>
+            <div class="rec-section-title">Tipo de seña</div>
+            <div class="rec-type-row">
+              <div class="rec-type-btn selected" id="typeStatic" onclick="setRecType('static')">
+                ✋ Estática
+              </div>
+              <div class="rec-type-btn" id="typeDynamic" onclick="setRecType('dynamic')">
+                👋 Dinámica
+              </div>
+            </div>
+          </div>
+          <button id="btnStartRecord" onclick="toggleRecord()">
+            <span id="recBtnIcon">⏺</span>
+            <span id="recBtnLabel">Iniciar grabación</span>
+          </button>
+          <div id="recStatus">Ingresá un nombre e iniciá la grabación</div>
+          <div id="recProgress"><div id="recProgressFill"></div></div>
+
+          <!-- Importar desde imagen -->
+          <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+            <div class="rec-section-title">Importar desde imagen JPG</div>
+            <button class="dict-btn primary" onclick="document.getElementById('fileInput').click()" style="width:100%;padding:8px;margin-top:4px;border-radius:var(--radius-sm);font-size:0.78rem">
+              📁 Seleccionar imagen(es)
+            </button>
+            <input type="file" id="fileInput" accept="image/*" multiple onchange="importImages(event)">
+          </div>
+        </div>
+      </div>
+
+      <!-- MODO DICCIONARIO -->
+      <div id="dictPanel">
+        <div class="dict-header">
+          <span id="dictCount">0 señas guardadas</span>
+          <div class="dict-actions">
+            <button class="dict-btn" onclick="exportDict()">⬇ Exportar</button>
+            <button class="dict-btn primary" onclick="document.getElementById('importJsonInput').click()">⬆ Importar</button>
+            <input type="file" id="importJsonInput" accept=".json" style="display:none" onchange="importDict(event)">
+          </div>
+        </div>
+        <div id="dictList"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal">
+  <div id="modalBox">
+    <div id="modalTitle"></div>
+    <div id="modalMsg"></div>
+    <div class="modal-btns" id="modalBtns"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<!-- MEDIAPIPE -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+/// ═══════════════════════════════════════════════════════
+//  STORAGE — Sincronización en tiempo real con Firebase
+// ═══════════════════════════════════════════════════════
+
+// TODO: Reemplazá este objeto con las credenciales reales de tu consola de Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyD_eWxsXjleMmFC1Fb5NWjMfIs7tNHf3lk",
+  authDomain: "lsa-app-5abd8.firebaseapp.com",
+  databaseURL: "https://lsa-app-5abd8-default-rtdb.firebaseio.com",
+  projectId: "lsa-app-5abd8",
+  storageBucket: "lsa-app-5abd8.firebasestorage.app",
+  messagingSenderId: "654686919495",
+  appId: "1:654686919495:web:37da3e1530c170f9be0a62"
+};
+
+// Inicializar la App y la Base de datos
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Referencia a un documento único cooperativo (Esquema de documento único)
+const docRef = db.collection('diccionarios').doc('lsa_general');
+
+// El diccionario local inicia vacío y se poblará automáticamente desde la nube
+let dict = {}; 
+
+// Función complementaria para reconstruir Float32Arrays al descargar de la red
+function normalizeDictEntry(entry) {
+  if (entry.type === 'static') {
+    entry.samples = entry.samples.map(s =>
+      s instanceof Float32Array ? s : new Float32Array(s));
+  } else {
+    entry.samples = entry.samples.map(seq =>
+      seq.map(f => f instanceof Float32Array ? f : new Float32Array(f)));
+  }
+  return entry;
+}
+
+// NUEVO: Reemplaza a saveDict(). Sube el diccionario serializado a Firestore
+function saveDict(serializedData) {
+  docRef.set({ gestos: serializedData })
+    .then(() => {
+      showToast('✓ Diccionario sincronizado en la nube');
+    })
+    .catch(error => {
+      console.error("Error al guardar en Firebase:", error);
+      showToast('⚠ Error al subir a la nube');
+    });
+}
+
+// NUEVO: Escuchador en tiempo real. Descarga datos remotos ante CUALQUIER cambio externo
+function initFirebaseSync() {
+  docRef.onSnapshot((doc) => {
+    if (doc.exists && doc.data().gestos) {
+      const remoteGestures = doc.data().gestos;
+      
+      dict = {}; // Limpiamos la memoria local actual
+      
+      // Procesamos cada seña bajada y la volvemos a pasar a Float32Array
+      for (const [label, entry] of Object.entries(remoteGestures)) {
+        dict[label] = normalizeDictEntry(entry);
+      }
+      
+      // Forzamos el refresco visual de la pestaña Diccionario si está abierta
+      renderDict();
+    } else {
+      dict = {};
+      renderDict();
+    }
+  }, (error) => {
+    console.error("Error en el stream de datos de Firebase:", error);
+  });
+}
+
+// Disparamos la sincronización inmediatamente al cargar la página
+initFirebaseSync();
+
+// ═══════════════════════════════════════════════════════
+//  MATEMÁTICAS
+// ═══════════════════════════════════════════════════════
+
+function normalizeLandmarks(lm) {
+  // Espejamos X solo en cámara frontal (selfie), igual que el video.
+  // Cámara trasera: usamos x tal cual.
+  // Esto garantiza que grabación y reconocimiento en vivo sean siempre consistentes.
+  const mirror = isMirrored();
+  const pts = new Float32Array(42);
+  for (let i = 0; i < 21; i++) {
+    pts[i*2]   = mirror ? 1.0 - lm[i].x : lm[i].x;
+    pts[i*2+1] = lm[i].y;
+  }
+  // Centrar en muñeca
+  const wx = pts[0], wy = pts[1];
+  for (let i = 0; i < 21; i++) {
+    pts[i*2]   -= wx;
+    pts[i*2+1] -= wy;
+  }
+  // Escalar por distancia muñeca→MCP dedo medio (idx 9)
+  const scale = Math.hypot(pts[9*2], pts[9*2+1]);
+  if (scale > 1e-6) {
+    for (let i = 0; i < 42; i++) pts[i] /= scale;
+  }
+  return pts;
+}
+
+function cosineSim(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i];
+  }
+  const denom = Math.sqrt(na)*Math.sqrt(nb);
+  return denom < 1e-9 ? 0 : dot/denom;
+}
+
+function euclidSim(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += (a[i]-b[i])**2;
+  return 1 / (1 + Math.sqrt(sum/21)*3);
+}
+
+function staticSimilarity(a, b) {
+  return cosineSim(a,b)*0.45 + euclidSim(a,b)*0.55;
+}
+
+// DTW entre dos secuencias de vectores Float32Array
+function dtw(seq1, seq2) {
+  const n = seq1.length, m = seq2.length;
+  if (n === 0 || m === 0) return 0;
+  const INF = 1e9;
+  // Usamos array 1D para performance
+  const dp = new Float32Array((n+1)*(m+1)).fill(INF);
+  dp[0] = 0;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const cost = 1 - staticSimilarity(seq1[i-1], seq2[j-1]); // distancia = 1 - sim
+      const prev = Math.min(dp[(i-1)*(m+1)+j], dp[i*(m+1)+(j-1)], dp[(i-1)*(m+1)+(j-1)]);
+      dp[i*(m+1)+j] = cost + prev;
+    }
+  }
+  const rawDist = dp[n*(m+1)+m] / Math.max(n,m);
+  // Convertir distancia a similitud 0-1
+  return Math.max(0, 1 - rawDist * 1.5);
+}
+
+// Comparar secuencia viva contra muestras de referencia (promedia)
+function dynamicSimilarity(liveSeq, refSamples) {
+  if (!refSamples || refSamples.length === 0) return 0;
+  let total = 0;
+  for (const refSeq of refSamples) {
+    total += dtw(liveSeq, refSeq);
+  }
+  return total / refSamples.length;
+}
+
+// ═══════════════════════════════════════════════════════
+//  CLASIFICADOR
+// ═══════════════════════════════════════════════════════
+const CONF_MIN   = 0.58;
+const STABLE_N   = 18;   // frames para auto-confirmar
+const AUTO_CD    = 1800; // ms entre auto-confirmaciones
+
+let lastAutoTime = 0;
+
+function classifyStatic(liveLm) {
+  const results = [];
+  for (const [label, entry] of Object.entries(dict)) {
+    if (entry.type !== 'static' || !entry.samples.length) continue;
+    let best = 0;
+    for (const s of entry.samples) best = Math.max(best, staticSimilarity(liveLm, s));
+    results.push({ label, score: best, type: 'static' });
+  }
+  return results.sort((a,b) => b.score - a.score).slice(0,5);
+}
+
+function classifyDynamic(liveSeq) {
+  if (liveSeq.length < 6) return [];
+  const results = [];
+  for (const [label, entry] of Object.entries(dict)) {
+    if (entry.type !== 'dynamic' || !entry.samples.length) continue;
+    const score = dynamicSimilarity(liveSeq, entry.samples);
+    results.push({ label, score, type: 'dynamic' });
+  }
+  return results.sort((a,b) => b.score - a.score).slice(0,3);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ESTADO DE LA APP
+// ═══════════════════════════════════════════════════════
+let appMode       = 'translate';  // translate | record | dict
+let recType       = 'static';     // static | dynamic
+let isRecording   = false;
+let recFrames     = [];           // frames durante grabación dinámica
+let recStaticLm   = null;         // landmark durante grabación estática
+let recMaxFrames  = 40;           // máx frames para dinámico (~1.3s a 30fps)
+let recTimer      = null;
+
+// Detección en vivo
+let liveFrames    = [];           // ventana deslizante últimos N frames
+const LIVE_WIN    = 30;           // tamaño de ventana para detección dinámica
+let currentMatch  = null;
+let stableLabel   = null;
+let stableCount   = 0;
+let handPresent   = false;
+
+// ═══════════════════════════════════════════════════════
+//  TEXTO OUTPUT
+// ═══════════════════════════════════════════════════════
+let outputText = '';
+
+function renderText() {
+  const el = document.getElementById('textDisplay');
+  el.innerHTML = outputText.replace(/\n/g,'<br>') + '<span class="cursor"></span>';
+}
+
+function addLetter(letter) {
+  outputText += letter;
+  renderText();
+}
+function addSpace() { outputText += ' '; renderText(); }
+function backspace() { outputText = outputText.slice(0,-1); renderText(); }
+function clearText() {
+  if (!outputText) return;
+  showModal('Limpiar texto', '¿Borrar todo el texto acumulado?', [
+    { label:'Cancelar', primary:false, action:closeModal },
+    { label:'Borrar', primary:true, action:()=>{ outputText=''; renderText(); closeModal(); } }
+  ]);
+}
+function confirmLetter() {
+  if (currentMatch && currentMatch.score >= CONF_MIN) {
+    addLetter(currentMatch.label);
+    stableCount = 0;
+    lastAutoTime = Date.now();
+    showToast('✓ "' + currentMatch.label + '" confirmada');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MEDIAPIPE
+// ═══════════════════════════════════════════════════════
+let mpHands, mpCamera;
+const videoEl    = document.getElementById('videoEl');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const ovCtx      = overlayCanvas.getContext('2d');
+
+function resizeOverlay() {
+  overlayCanvas.width  = overlayCanvas.offsetWidth;
+  overlayCanvas.height = overlayCanvas.offsetHeight;
+}
+window.addEventListener('resize', resizeOverlay);
+
+function onResults(results) {
+  // Sincronizar tamaño del canvas con el elemento visible en cada frame
+  const cRect = overlayCanvas.getBoundingClientRect();
+  if (overlayCanvas.width  !== Math.round(cRect.width) ||
+      overlayCanvas.height !== Math.round(cRect.height)) {
+    overlayCanvas.width  = Math.round(cRect.width);
+    overlayCanvas.height = Math.round(cRect.height);
+  }
+  const W = overlayCanvas.width;
+  const H = overlayCanvas.height;
+  ovCtx.clearRect(0, 0, W, H);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    handPresent = false;
+    stableCount = 0;
+    liveFrames  = [];
+    updateHandStatus(false);
+    updateDetectedBadge(null, 0, false);
+    updateStabilityBar(0);
+    updateCandidates([]);
+    return;
+  }
+
+  handPresent = true;
+  updateHandStatus(true);
+
+  const lmRaw  = results.multiHandLandmarks[0];
+  const lmNorm = normalizeLandmarks(lmRaw); // espejo X incluido
+
+  // ── Dibujar esqueleto de mano manualmente en píxeles ──
+  // Cámara frontal (user): espejamos x = 1 - lm.x  (selfie)
+  // Cámara trasera (environment): usamos x tal cual  (no espejo)
+  const isRec = appMode === 'record' && isRecording;
+  const lineCol = isRec ? '#f85149bb' : '#2ea04355';
+  const dotCol  = isRec ? '#f85149'   : '#2ea043';
+  const mirror  = isMirrored();
+
+  // Conexiones del esqueleto de mano (índices de MediaPipe Hands)
+  const CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17]
+  ];
+
+  const lx = i => (mirror ? 1 - lmRaw[i].x : lmRaw[i].x) * W;
+  const ly = i => lmRaw[i].y * H;
+
+  // Dibujar líneas
+  ovCtx.strokeStyle = lineCol;
+  ovCtx.lineWidth   = 2;
+  ovCtx.lineCap     = 'round';
+  for (const [a, b] of CONNECTIONS) {
+    ovCtx.beginPath();
+    ovCtx.moveTo(lx(a), ly(a));
+    ovCtx.lineTo(lx(b), ly(b));
+    ovCtx.stroke();
+  }
+
+  // Dibujar puntos
+  for (let i = 0; i < lmRaw.length; i++) {
+    const r = i === 0 ? 6 : 4;
+    ovCtx.beginPath();
+    ovCtx.arc(lx(i), ly(i), r, 0, Math.PI * 2);
+    ovCtx.fillStyle = dotCol;
+    ovCtx.fill();
+    ovCtx.strokeStyle = '#000a';
+    ovCtx.lineWidth = 1;
+    ovCtx.stroke();
+  }
+
+  // Acumular frame en ventana deslizante
+  liveFrames.push(lmNorm);
+  if (liveFrames.length > LIVE_WIN) liveFrames.shift();
+
+  // ── MODO GRABACIÓN ──
+  if (appMode === 'record' && isRecording) {
+    if (recType === 'dynamic') {
+      // Estáticas: capturadas via liveFrames en el setInterval de startRecording
+      // Dinámicas: acumular frames aquí
+      recFrames.push(lmNorm);
+      const pct = Math.min(100, (recFrames.length / recMaxFrames) * 100);
+      document.getElementById('recProgressFill').style.width = pct + '%';
+      document.getElementById('recStatus').textContent =
+        `Grabando... ${recFrames.length}/${recMaxFrames} frames`;
+      if (recFrames.length >= recMaxFrames) finishRecording();
+    }
+    // Para estáticas no hacemos return: dejamos que liveFrames siga acumulando
+    if (recType === 'static') return;
+  }
+
+  // ── MODO TRADUCCIÓN ──
+  if (appMode === 'translate') {
+    if (Object.keys(dict).length === 0) {
+      updateDetectedBadge('—', 0, false);
+      updateCandidates([]);
+      return;
+    }
+
+    // Clasificar estáticos
+    const staticResults  = classifyStatic(lmNorm);
+    // Clasificar dinámicos si hay suficientes frames
+    const dynamicResults = classifyDynamic(liveFrames);
+
+    // Combinar resultados
+    let allResults = [...staticResults, ...dynamicResults]
+      .sort((a,b) => b.score - a.score);
+
+    // Dedup por label (quedarse con el mejor)
+    const seen = new Set();
+    allResults = allResults.filter(r => {
+      if (seen.has(r.label)) return false;
+      seen.add(r.label); return true;
+    });
+
+    const best = allResults[0] || null;
+    currentMatch = best;
+
+    updateCandidates(allResults.slice(0,4));
+
+    if (best && best.score >= CONF_MIN) {
+      updateDetectedBadge(best.label, best.score, true);
+
+      // Estabilidad
+      if (best.label === stableLabel) {
+        stableCount++;
+      } else {
+        stableLabel = best.label;
+        stableCount = 1;
+      }
+
+      const stabPct = Math.min(1, stableCount / STABLE_N);
+      updateStabilityBar(stabPct);
+
+      // Auto-confirmar
+      if (stableCount >= STABLE_N && Date.now() - lastAutoTime > AUTO_CD) {
+        addLetter(best.label);
+        lastAutoTime = Date.now();
+        stableCount  = 0;
+        showToast('✓ "' + best.label + '" detectada');
+      }
+    } else {
+      stableLabel = null;
+      stableCount = 0;
+      updateDetectedBadge(best ? best.label : '—', best ? best.score : 0, false);
+      updateStabilityBar(0);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  GRABACIÓN
+// ═══════════════════════════════════════════════════════
+function setRecType(t) {
+  recType = t;
+  document.getElementById('typeStatic').classList.toggle('selected', t==='static');
+  document.getElementById('typeDynamic').classList.toggle('selected', t==='dynamic');
+}
+
+function toggleRecord() {
+  if (!isRecording) startRecording();
+  else if (recType === 'dynamic') finishRecording();
+  else finishStaticRecording();
+}
+
+function startRecording() {
+  const name = document.getElementById('recNameInput').value.trim().toUpperCase();
+  if (!name) { showToast('⚠ Ingresá un nombre para la seña'); return; }
+
+  isRecording  = true;
+  recFrames    = [];
+
+  // UI
+  document.getElementById('btnStartRecord').classList.add('recording');
+  document.getElementById('recBtnIcon').textContent  = recType === 'dynamic' ? '⏹' : '✓';
+  document.getElementById('recBtnLabel').textContent = recType === 'dynamic' ? 'Detener grabación' : 'Guardar seña';
+  document.getElementById('recStatus').textContent   = recType === 'dynamic'
+    ? 'Realizá la seña con movimiento...' : 'Mantené la posición 1.5 segundos...';
+  document.getElementById('recProgressFill').style.width = '0%';
+  document.getElementById('detectedBadge').classList.add('recording-active');
+  document.getElementById('btnRecordFloat').classList.add('recording');
+  document.getElementById('recIcon').textContent = recType === 'dynamic' ? '⏹' : '✓';
+
+  if (recType === 'static') {
+    // Capturar frames de liveFrames durante 1.5s y promediar
+    const capturedFrames = [];
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      elapsed += 80;
+      // liveFrames siempre tiene el frame más reciente aunque no haya mano
+      if (liveFrames.length > 0) {
+        capturedFrames.push(new Float32Array(liveFrames[liveFrames.length - 1]));
+      }
+      const pct = Math.min(100, (elapsed / 1500) * 100);
+      document.getElementById('recProgressFill').style.width = pct + '%';
+      document.getElementById('recStatus').textContent =
+        liveFrames.length > 0
+          ? `Capturando... ${capturedFrames.length} muestras`
+          : '⚠ Mostrá tu mano a la cámara...';
+    }, 80);
+
+    recTimer = setTimeout(() => {
+      clearInterval(interval);
+      isRecording = false;
+      if (capturedFrames.length >= 3) {
+        finishStaticRecording(capturedFrames);
+      } else {
+        showToast('⚠ No se detectó mano durante la grabación');
+        resetRecUI();
+      }
+    }, 1500);
+  }
+}
+
+function finishStaticRecording(frames) {
+  const name = document.getElementById('recNameInput').value.trim().toUpperCase();
+  if (!name) { isRecording = false; resetRecUI(); return; }
+
+  let sample;
+  if (frames && frames.length > 0) {
+    // Promediar frames capturados
+    const avg = new Float32Array(42);
+    for (const f of frames) for (let i=0;i<42;i++) avg[i] += f[i];
+    for (let i=0;i<42;i++) avg[i] /= frames.length;
+    sample = avg;
+  } else if (recStaticLm) {
+    sample = new Float32Array(recStaticLm);
+  } else {
+    showToast('⚠ No se detectó mano'); isRecording = false; resetRecUI(); return;
+  }
+
+  saveGesture(name, 'static', sample);
+  isRecording = false;
+  resetRecUI();
+}
+
+function finishRecording() {
+  if (recType === 'dynamic') {
+    const name = document.getElementById('recNameInput').value.trim().toUpperCase();
+    if (recFrames.length < 5) {
+      showToast('⚠ Grabación muy corta, intentá de nuevo');
+      isRecording = false; resetRecUI(); return;
+    }
+    saveGesture(name, 'dynamic', recFrames.slice());
+    isRecording = false;
+    resetRecUI();
+  }
+}
+
+function saveGesture(name, type, data) {
+  if (!dict[name]) dict[name] = { type, samples: [] };
+  // Si cambia el tipo, resetear
+  if (dict[name].type !== type) dict[name] = { type, samples: [] };
+
+  if (type === 'static') {
+    dict[name].samples.push(data);
+  } else {
+    dict[name].samples.push(data.map(f => new Float32Array(f)));
+  }
+
+  // Limitar a 5 muestras por gesto
+  if (dict[name].samples.length > 5) dict[name].samples.shift();
+
+  saveDict(serializeDict());
+  renderDict();
+  showToast(`✓ "${name}" guardada (${dict[name].samples.length} muestra/s)`);
+  document.getElementById('recNameInput').value = '';
+}
+
+function serializeDict() {
+  const out = {};
+  for (const [k,v] of Object.entries(dict)) {
+    out[k] = {
+      type: v.type,
+      samples: v.type === 'static'
+        ? v.samples.map(s => Array.from(s))
+        : v.samples.map(seq => seq.map(f => Array.from(f)))
+    };
+  }
+  return out;
+}
+
+function resetRecUI() {
+  clearTimeout(recTimer);
+  document.getElementById('btnStartRecord').classList.remove('recording');
+  document.getElementById('recBtnIcon').textContent  = '⏺';
+  document.getElementById('recBtnLabel').textContent = 'Iniciar grabación';
+  document.getElementById('recStatus').textContent   = 'Ingresá un nombre e iniciá la grabación';
+  document.getElementById('recProgressFill').style.width = '0%';
+  document.getElementById('detectedBadge').classList.remove('recording-active');
+  document.getElementById('btnRecordFloat').classList.remove('recording');
+  document.getElementById('recIcon').textContent = '⏺';
+}
+
+// ═══════════════════════════════════════════════════════
+//  IMPORTAR IMÁGENES JPG
+// ═══════════════════════════════════════════════════════
+async function importImages(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+
+  // Necesitamos MediaPipe en modo imagen estática
+  const staticDetector = new Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  staticDetector.setOptions({
+    maxNumHands:1, modelComplexity:1,
+    minDetectionConfidence:0.5, minTrackingConfidence:0.5,
+    staticImageMode:true
+  });
+
+  let ok=0, fail=0;
+
+  for (const file of files) {
+    const label = file.name.replace(/\.[^.]+$/, '').toUpperCase()
+                       .replace(/_\d+$/, '');  // A_1 → A, A_2 → A
+
+    const lm = await extractLandmarksFromFile(file, staticDetector);
+    if (lm) {
+      if (!dict[label]) dict[label] = { type:'static', samples:[] };
+      if (dict[label].type !== 'static') dict[label] = { type:'static', samples:[] };
+      dict[label].samples.push(lm);
+      if (dict[label].samples.length > 5) dict[label].samples.shift();
+      ok++;
+    } else {
+      fail++;
+    }
+  }
+
+  staticDetector.close();
+  saveDict(serializeDict());
+  renderDict();
+  showToast(`✓ ${ok} imagen/es importadas${fail>0?' · '+fail+' sin mano detectada':''}`);
+  event.target.value = '';
+}
+
+function extractLandmarksFromFile(file, detector) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      detector.onResults = results => {
+        URL.revokeObjectURL(url);
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          resolve(normalizeLandmarks(results.multiHandLandmarks[0]));
+        } else {
+          resolve(null);
+        }
+      };
+      detector.send({ image: canvas }).catch(() => resolve(null));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  DICCIONARIO UI
+// ═══════════════════════════════════════════════════════
+function renderDict() {
+  const list  = document.getElementById('dictList');
+  const count = document.getElementById('dictCount');
+  const keys  = Object.keys(dict).sort();
+
+  count.textContent = `${keys.length} seña/s guardada/s`;
+
+  if (keys.length === 0) {
+    list.innerHTML = `<div class="dict-empty">
+      Todavía no hay señas guardadas.<br>
+      Usá la pestaña <strong>Grabar</strong> para agregar.<br>
+      O importá imágenes JPG de LSA.
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = keys.map(k => {
+    const e = dict[k];
+    const typeLabel = e.type === 'static' ? 'Estática' : 'Dinámica';
+    const samples   = e.samples.length;
+    return `<div class="dict-item">
+      <div class="dict-item-label">${k}</div>
+      <div class="dict-item-type ${e.type}">${typeLabel}</div>
+      <div class="dict-item-count">${samples} muestra/s</div>
+      <button class="dict-item-del" onclick="deleteGesture('${k}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function deleteGesture(name) {
+  showModal(
+    `Eliminar "${name}"`,
+    'Esta acción no se puede deshacer.',
+    [
+      { label:'Cancelar', primary:false, action:closeModal },
+      { label:'Eliminar', primary:true, action:() => {
+        delete dict[name];
+        saveDict(serializeDict());
+        renderDict();
+        closeModal();
+        showToast(`"${name}" eliminada`);
+      }}
+    ]
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  EXPORTAR / IMPORTAR DICCIONARIO
+// ═══════════════════════════════════════════════════════
+function exportDict() {
+  if (!Object.keys(dict).length) { showToast('El diccionario está vacío'); return; }
+  const data = JSON.stringify(serializeDict(), null, 2);
+  const blob = new Blob([data], { type:'application/json' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `lsa_dict_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  showToast('✓ Diccionario exportado');
+}
+
+function importDict(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      let count = 0;
+      for (const [k, v] of Object.entries(imported)) {
+        dict[k] = normalizeDictEntry(v);
+        count++;
+      }
+      saveDict(serializeDict());
+      renderDict();
+      showToast(`✓ ${count} señas importadas`);
+    } catch { showToast('⚠ Archivo inválido'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  UI UPDATES
+// ═══════════════════════════════════════════════════════
+function updateHandStatus(detected) {
+  document.getElementById('handDot').classList.toggle('on', detected);
+  document.getElementById('handStatusText').textContent =
+    detected ? 'Mano detectada' : 'Buscando mano...';
+}
+
+function updateDetectedBadge(letter, score, matched) {
+  document.getElementById('detectedLetter').textContent = letter || '—';
+  document.getElementById('detectedLabel').textContent  =
+    matched ? `${Math.round(score*100)}% coincidencia` : (letter && letter !== '—' ? 'Confianza baja' : 'Sin seña');
+  document.getElementById('confFill').style.width = Math.round(score*100) + '%';
+  document.getElementById('confFill').style.background =
+    score > 0.75 ? 'var(--accent)' : score > 0.60 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('detectedBadge').classList.toggle('match', matched);
+}
+
+function updateStabilityBar(ratio) {
+  document.getElementById('stabilityBar').style.width = (ratio*100) + '%';
+}
+
+function updateCandidates(results) {
+  const list = document.getElementById('candList');
+  if (!results.length) { list.innerHTML=''; return; }
+  list.innerHTML = results.map((r,i) => `
+    <div class="cand-item ${i===0?'top':''}">
+      <div class="cand-letter">${r.label}</div>
+      <div class="cand-bar-wrap"><div class="cand-bar" style="width:${Math.round(r.score*100)}%"></div></div>
+      <div class="cand-pct">${Math.round(r.score*100)}%</div>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODO TABS
+// ═══════════════════════════════════════════════════════
+function setMode(mode) {
+  appMode = mode;
+  ['translate','record','dict'].forEach(m => {
+    document.getElementById('tab' + m.charAt(0).toUpperCase()+m.slice(1))
+      ?.classList.toggle('active', m===mode);
+  });
+
+  document.getElementById('panelTranslate').style.display  = mode==='translate' ? 'flex' : 'none';
+  document.getElementById('panelTranslate').style.flexDirection = 'column';
+  document.getElementById('panelTranslate').style.height   = '100%';
+  document.getElementById('panelRecord').classList.toggle('hidden', mode!=='record');
+  document.getElementById('dictPanel').classList.toggle('active', mode==='dict');
+
+  // Botones flotantes
+  document.getElementById('btnConfirm').style.display     = mode==='translate' ? 'block' : 'none';
+  document.getElementById('btnRecordFloat').style.display = mode==='record'    ? 'flex'  : 'none';
+
+  if (mode === 'dict') renderDict();
+  if (isRecording && mode !== 'record') { isRecording=false; resetRecUI(); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODAL & TOAST
+// ═══════════════════════════════════════════════════════
+function showModal(title, msg, buttons) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalMsg').textContent   = msg;
+  document.getElementById('modalBtns').innerHTML    = buttons.map((b,i) =>
+    `<button class="modal-btn ${b.primary?'primary':''}" onclick="__modalActions[${i}]()">${b.label}</button>`
+  ).join('');
+  window.__modalActions = buttons.map(b => b.action);
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  CÁMARA — con soporte frontal / trasera
+// ═══════════════════════════════════════════════════════
+let currentFacing = 'user';   // 'user' = frontal, 'environment' = trasera
+let currentStream = null;
+
+// La cámara frontal se espeja (selfie), la trasera NO.
+// Esto afecta tanto el CSS del video como el espejo de los landmarks al dibujar.
+function isMirrored() { return currentFacing === 'user'; }
+
+async function startCamera(facing) {
+  // Detener stream anterior si existe
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
+
+  const constraints = {
+    video: {
+      facingMode: { ideal: facing },
+      width:  { ideal: 640 },
+      height: { ideal: 480 }
+    }
+  };
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    currentStream  = stream;
+    currentFacing  = facing;
+    videoEl.srcObject = stream;
+    await videoEl.play();
+
+    // Espejo CSS: solo en cámara frontal
+    videoEl.style.transform = isMirrored() ? 'scaleX(-1)' : 'scaleX(1)';
+
+    // Actualizar indicador
+    const indicator = document.getElementById('camIndicator');
+    indicator.textContent = facing === 'user' ? '📷 FRONTAL' : '📷 TRASERA';
+
+    return true;
+  } catch(e) {
+    console.error('Camera error:', e);
+    return false;
+  }
+}
+
+async function flipCamera() {
+  const btn = document.getElementById('btnFlipCam');
+  btn.classList.add('flipping');
+  setTimeout(() => btn.classList.remove('flipping'), 350);
+
+  // Detener grabación si está activa
+  if (isRecording) { isRecording = false; resetRecUI(); }
+
+  // Limpiar estado de detección
+  handPresent = false;
+  liveFrames  = [];
+  updateHandStatus(false);
+  updateDetectedBadge(null, 0, false);
+
+  const nextFacing = currentFacing === 'user' ? 'environment' : 'user';
+  const ok = await startCamera(nextFacing);
+
+  if (!ok) {
+    showToast('⚠ No se encontró cámara ' + (nextFacing === 'user' ? 'frontal' : 'trasera'));
+    // Volver a la anterior
+    await startCamera(currentFacing);
+  } else {
+    showToast(nextFacing === 'user' ? '📷 Cámara frontal' : '📷 Cámara trasera');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  INICIO
+// ═══════════════════════════════════════════════════════
+async function startApp() {
+  document.getElementById('onboarding').style.display = 'none';
+  document.getElementById('app').style.display        = 'flex';
+
+  const ok = await startCamera('user');
+  if (!ok) {
+    alert('No se pudo acceder a la cámara. Verificá los permisos del dispositivo.');
+    return;
+  }
+
+  resizeOverlay();
+
+  mpHands = new Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  mpHands.setOptions({
+    maxNumHands:1, modelComplexity:1,
+    minDetectionConfidence:0.65, minTrackingConfidence:0.55
+  });
+  mpHands.onResults(onResults);
+
+  mpCamera = new Camera(videoEl, {
+    onFrame: async () => { await mpHands.send({ image: videoEl }); },
+    width:640, height:480
+  });
+  mpCamera.start();
+
+  // Inicializar UI
+  setMode('translate');
+  renderDict();
+  renderText();
+
+  if (Object.keys(dict).length === 0) {
+    setTimeout(() => showToast('💡 Comenzá grabando señas en la pestaña "Grabar"'), 1500);
+  }
+}
+
+// Inicializar panelTranslate como flex desde el inicio
+document.getElementById('panelTranslate').style.display = 'flex';
+document.getElementById('panelTranslate').style.flexDirection = 'column';
+document.getElementById('panelTranslate').style.height = '100%';
+</script>
+</body>
+</html>
