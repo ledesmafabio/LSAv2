@@ -1435,20 +1435,18 @@ async function startApp() {
   });
   mpHands.onResults(onResults);
 
-  mpCamera = new Camera(videoEl, {
-    onFrame: async () => { await mpHands.send({ image: videoEl }); },
+  mpCamera = new Camera(videoEl, {\n    onFrame: async () => { await mpHands.send({ image: videoEl }); },
     width:640, height:480
   });
   mpCamera.start();
 
   // Inicializar UI
   setMode('translate');
-  renderDict();
   renderText();
 
-  if (Object.keys(dict).length === 0) {
-    setTimeout(() => showToast('💡 Comenzá grabando señas en la pestaña "Grabar"'), 1500);
-  }
+  // ──> CAMBIO AQUÍ: En vez de llamar a renderDict(), iniciamos Firebase acá
+  // Esto asegura que la base de datos se escuche SOLO cuando la interfaz y MediaPipe ya están listos.
+  initFirebaseSync(); 
 }
 
 // Inicializar panelTranslate como flex desde el inicio
