@@ -584,14 +584,16 @@ const docRef = db.collection('diccionarios').doc('lsa_general');
 // El diccionario local inicia vacío y se poblará automáticamente desde la nube
 let dict = {}; 
 
-// Función complementaria para reconstruir Float32Arrays al descargar de la red
+// Convertir arrays planos a Float32Array después de cargar (Versión ultra-compatible con móviles)
 function normalizeDictEntry(entry) {
   if (entry.type === 'static') {
-    entry.samples = entry.samples.map(s =>
-      s instanceof Float32Array ? s : new Float32Array(s));
+    entry.samples = entry.samples.map(s => 
+      Array.isArray(s) ? new Float32Array(s) : s
+    );
   } else {
     entry.samples = entry.samples.map(seq =>
-      seq.map(f => f instanceof Float32Array ? f : new Float32Array(f)));
+      seq.map(f => Array.isArray(f) ? new Float32Array(f) : f)
+    );
   }
   return entry;
 }
