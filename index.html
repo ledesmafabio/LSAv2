@@ -1435,7 +1435,7 @@ async function startApp() {
   });
   mpHands.onResults(onResults);
 
-  mpCamera = new Camera(videoEl, {\n    onFrame: async () => { await mpHands.send({ image: videoEl }); },
+  mpCamera = new Camera(videoEl, {onFrame: async () => { await mpHands.send({ image: videoEl }); },
     width:640, height:480
   });
   mpCamera.start();
