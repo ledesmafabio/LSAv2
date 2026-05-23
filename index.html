@@ -669,40 +669,43 @@ function listenToFirestoreDict() {
 // ═══════════════════════════════════════════════════════
 
 function normalizeLandmarks(multiLandmarks, multiHandedness) {
-  const pts = new Float32Array(84); // 42 slots Izquierda (0-41) + 42 slots Derecha (42-83)
+  // 1. Usamos un array nativo de JS inicializado en cero (Garantiza un JSON limpio como '[0,0,0...]')
+  const pts = new Array(84).fill(0); 
   const mirror = isMirrored();
 
   if (!multiLandmarks || !multiHandedness) return pts;
 
   for (let i = 0; i < multiLandmarks.length; i++) {
     const lm = multiLandmarks[i];
-    const label = multiHandedness[i].label; // 'Left' o 'Right' según MediaPipe
+    const label = multiHandedness[i].label; // 'Left' o 'Right'
     
-    // Si la mano es izquierda va al inicio (0), si es derecha va a la segunda mitad (42)
+    // Si la mano es izquierda va del casillero 0 al 41. Si es derecha, del 42 al 83.
     const offset = (label === 'Left') ? 0 : 42;
 
-    // 1. Extraer coordenadas (X, Y)
-    const tempPts = new Float32Array(42);
+    // Extraer coordenadas de la mano actual
+    const tempPts = new Array(42).fill(0);
     for (let j = 0; j < 21; j++) {
       tempPts[j*2]   = mirror ? 1.0 - lm[j].x : lm[j].x;
       tempPts[j*2+1] = lm[j].y;
     }
 
-    // 2. Centrar en la muñeca de ESTA mano
+    // Centrar en su propia muñeca
     const wx = tempPts[0], wy = tempPts[1];
     for (let j = 0; j < 21; j++) {
       tempPts[j*2]   -= wx;
       tempPts[j*2+1] -= wy;
     }
 
-    // 3. Escalar según el tamaño de esta mano (distancia muñeca a base de dedo medio)
+    // Escalar según el tamaño de esta mano
     const scale = Math.hypot(tempPts[9*2], tempPts[9*2+1]);
     if (scale > 1e-6) {
       for (let j = 0; j < 42; j++) tempPts[j] /= scale;
     }
 
-    // 4. Inyectar en el bloque correspondiente del array de 84 elementos
-    pts.set(tempPts, offset);
+    // Copiar los 42 datos procesados en el bloque correspondiente del array maestro de 84
+    for (let j = 0; j < 42; j++) {
+      pts[offset + j] = tempPts[j];
+    }
   }
   return pts;
 }
