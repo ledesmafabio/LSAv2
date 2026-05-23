@@ -668,26 +668,41 @@ function listenToFirestoreDict() {
 //  MATEMÁTICAS
 // ═══════════════════════════════════════════════════════
 
-function normalizeLandmarks(lm) {
-  // Espejamos X solo en cámara frontal (selfie), igual que el video.
-  // Cámara trasera: usamos x tal cual.
-  // Esto garantiza que grabación y reconocimiento en vivo sean siempre consistentes.
+function normalizeLandmarks(multiLandmarks, multiHandedness) {
+  const pts = new Float32Array(84); // 42 slots Izquierda (0-41) + 42 slots Derecha (42-83)
   const mirror = isMirrored();
-  const pts = new Float32Array(42);
-  for (let i = 0; i < 21; i++) {
-    pts[i*2]   = mirror ? 1.0 - lm[i].x : lm[i].x;
-    pts[i*2+1] = lm[i].y;
-  }
-  // Centrar en muñeca
-  const wx = pts[0], wy = pts[1];
-  for (let i = 0; i < 21; i++) {
-    pts[i*2]   -= wx;
-    pts[i*2+1] -= wy;
-  }
-  // Escalar por distancia muñeca→MCP dedo medio (idx 9)
-  const scale = Math.hypot(pts[9*2], pts[9*2+1]);
-  if (scale > 1e-6) {
-    for (let i = 0; i < 42; i++) pts[i] /= scale;
+
+  if (!multiLandmarks || !multiHandedness) return pts;
+
+  for (let i = 0; i < multiLandmarks.length; i++) {
+    const lm = multiLandmarks[i];
+    const label = multiHandedness[i].label; // 'Left' o 'Right' según MediaPipe
+    
+    // Si la mano es izquierda va al inicio (0), si es derecha va a la segunda mitad (42)
+    const offset = (label === 'Left') ? 0 : 42;
+
+    // 1. Extraer coordenadas (X, Y)
+    const tempPts = new Float32Array(42);
+    for (let j = 0; j < 21; j++) {
+      tempPts[j*2]   = mirror ? 1.0 - lm[j].x : lm[j].x;
+      tempPts[j*2+1] = lm[j].y;
+    }
+
+    // 2. Centrar en la muñeca de ESTA mano
+    const wx = tempPts[0], wy = tempPts[1];
+    for (let j = 0; j < 21; j++) {
+      tempPts[j*2]   -= wx;
+      tempPts[j*2+1] -= wy;
+    }
+
+    // 3. Escalar según el tamaño de esta mano (distancia muñeca a base de dedo medio)
+    const scale = Math.hypot(tempPts[9*2], tempPts[9*2+1]);
+    if (scale > 1e-6) {
+      for (let j = 0; j < 42; j++) tempPts[j] /= scale;
+    }
+
+    // 4. Inyectar en el bloque correspondiente del array de 84 elementos
+    pts.set(tempPts, offset);
   }
   return pts;
 }
@@ -703,8 +718,11 @@ function cosineSim(a, b) {
 
 function euclidSim(a, b) {
   let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += (a[i]-b[i])**2;
-  return 1 / (1 + Math.sqrt(sum/21)*3);
+  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
+  
+  // Se adapta automáticamente: 21 puntos si es el formato viejo, 42 si son dos manos
+  const numPoints = a.length / 2; 
+  return 1 / (1 + Math.sqrt(sum / numPoints) * 3);
 }
 
 function staticSimilarity(a, b) {
@@ -860,59 +878,53 @@ function onResults(results) {
     return;
   }
 
-  handPresent = true;
+ handPresent = true;
   updateHandStatus(true);
 
-  const lmRaw  = results.multiHandLandmarks[0];
-  const lmNorm = normalizeLandmarks(lmRaw); // espejo X incluido
+  // ── 1. NORMALIZACIÓN BIMANUAL SIMULTÁNEA ──
+  const lmNorm = normalizeLandmarks(results.multiHandLandmarks, results.multiHandedness);
 
-  // ── Dibujar esqueleto de mano manualmente en píxeles ──
-  // Cámara frontal (user): espejamos x = 1 - lm.x  (selfie)
-  // Cámara trasera (environment): usamos x tal cual  (no espejo)
+  // ── 2. RENDERIZADO DE AMBAS MANOS EN EL CANVAS ──
   const isRec = appMode === 'record' && isRecording;
   const lineCol = isRec ? '#f85149bb' : '#2ea04355';
-  const dotCol  = isRec ? '#f85149'   : '#2ea043';
-  const mirror  = isMirrored();
+  const dotCol = isRec ? '#f85149' : '#2ea043';
+  const mirror = isMirrored();
 
-  // Conexiones del esqueleto de mano (índices de MediaPipe Hands)
   const CONNECTIONS = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [0,9],[9,10],[10,11],[11,12],
-    [0,13],[13,14],[14,15],[15,16],
-    [0,17],[17,18],[18,19],[19,20],
-    [5,9],[9,13],[13,17]
+    [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12], [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20], [5,9],[9,13],[13,17]
   ];
 
-  const lx = i => (mirror ? 1 - lmRaw[i].x : lmRaw[i].x) * W;
-  const ly = i => lmRaw[i].y * H;
+  // Dibujar cada mano detectada por MediaPipe
+  for (let h = 0; h < results.multiHandLandmarks.length; h++) {
+    const lmRaw = results.multiHandLandmarks[h];
+    const lx = i => (mirror ? 1 - lmRaw[i].x : lmRaw[i].x) * W;
+    const ly = i => lmRaw[i].y * H;
 
-  // Dibujar líneas
-  ovCtx.strokeStyle = lineCol;
-  ovCtx.lineWidth   = 2;
-  ovCtx.lineCap     = 'round';
-  for (const [a, b] of CONNECTIONS) {
-    ovCtx.beginPath();
-    ovCtx.moveTo(lx(a), ly(a));
-    ovCtx.lineTo(lx(b), ly(b));
-    ovCtx.stroke();
+    // Dibujar líneas
+    ovCtx.strokeStyle = lineCol;
+    ovCtx.lineWidth = 2;
+    ovCtx.lineCap = 'round';
+    for (const [a, b] of CONNECTIONS) {
+      ovCtx.beginPath();
+      ovCtx.moveTo(lx(a), ly(a));
+      ovCtx.lineTo(lx(b), ly(b));
+      ovCtx.stroke();
+    }
+
+    // Dibujar nodos
+    for (let i = 0; i < lmRaw.length; i++) {
+      const r = i === 0 ? 6 : 4;
+      ovCtx.beginPath();
+      ovCtx.arc(lx(i), ly(i), r, 0, Math.PI * 2);
+      ovCtx.fillStyle = dotCol;
+      ovCtx.fill();
+    }
   }
 
-  // Dibujar puntos
-  for (let i = 0; i < lmRaw.length; i++) {
-    const r = i === 0 ? 6 : 4;
-    ovCtx.beginPath();
-    ovCtx.arc(lx(i), ly(i), r, 0, Math.PI * 2);
-    ovCtx.fillStyle = dotCol;
-    ovCtx.fill();
-    ovCtx.strokeStyle = '#000a';
-    ovCtx.lineWidth = 1;
-    ovCtx.stroke();
-  }
-
-  // Acumular frame en ventana deslizante
-  liveFrames.push(lmNorm);
-  if (liveFrames.length > LIVE_WIN) liveFrames.shift();
+  // ── 3. LÓGICA DE GRABACIÓN Y CLASIFICACIÓN ORIGINAL ──
+  // (A partir de acá el código sigue exactamente igual, procesando 'lmNorm')
 
   // ── MODO GRABACIÓN ──
   if (appMode === 'record' && isRecording) {
@@ -1444,7 +1456,7 @@ async function flipCamera() {
 //  INICIO
 // ═══════════════════════════════════════════════════════
 async function startApp() {
-  localStorage.clear();
+  //localStorage.clear();
   document.getElementById('onboarding').style.display = 'none';
   document.getElementById('app').style.display        = 'flex';
 
@@ -1460,7 +1472,7 @@ async function startApp() {
     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
   });
   mpHands.setOptions({
-    maxNumHands:1, modelComplexity:1,
+    maxNumHands:2, modelComplexity:1,
     minDetectionConfidence:0.65, minTrackingConfidence:0.55
   });
   mpHands.onResults(onResults);
