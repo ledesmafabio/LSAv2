@@ -544,21 +544,14 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
 <!-- MEDIAPIPE -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
 <script>
 'use strict';
@@ -604,30 +597,17 @@ function normalizeDictEntry(entry) {
 
 // Función optimizada para guardar datos localmente y subirlos a la nube
 function saveDict(d) {
-  // 1. Crear una copia limpia convirtiendo cualquier Float32Array a Array común de JS
-  const cleanDict = {};
-  for (const [key, entry] of Object.entries(d)) {
-    cleanDict[key] = {
-      type: entry.type,
-      samples: entry.type === 'static'
-        ? entry.samples.map(s => Array.from(s))
-        : entry.samples.map(seq => seq.map(f => Array.from(f)))
-    };
-  }
-
-  // 2. Guardar copia local de respaldo con formato limpio
-  localStorage.setItem(STORE_KEY, JSON.stringify(cleanDict));
+  // 1. Guardar copia local de respaldo rápido
+  localStorage.setItem(STORE_KEY, JSON.stringify(d));
   
-  // 3. Subir a Firestore como texto JSON perfectamente estructurado
+  // 2. Subir a Firestore convertido en texto JSON estructurado
   db.collection('diccionarios').doc('lsa_general').set({
-    gestos: JSON.stringify(cleanDict),
+    gestos: JSON.stringify(d),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   })
-  .then(() => {
-    console.log("☁️ Base de datos sincronizada con éxito en Firestore.");
-  })
+  .then(() => console.log("☁️ Base de datos sincronizada con éxito en Firestore."))
   .catch(err => {
-    console.error("Error crítico al subir a Firestore:", err);
+    console.error("Error al subir a Firestore:", err);
     showToast('⚠️ Error al guardar en la nube');
   });
 }
@@ -939,8 +919,9 @@ function onResults(results) {
     }
   }
 
-  // ── 3. LÓGICA DE GRABACIÓN Y CLASIFICACIÓN ORIGINAL ──
-  // (A partir de acá el código sigue exactamente igual, procesando 'lmNorm')
+  // ── 3. ACTUALIZAR VENTANA DESLIZANTE DE FRAMES (siempre, antes de grabar o traducir) ──
+  liveFrames.push(lmNorm);
+  if (liveFrames.length > LIVE_WIN) liveFrames.shift();
 
   // ── MODO GRABACIÓN ──
   if (appMode === 'record' && isRecording) {
@@ -1087,10 +1068,10 @@ function finishStaticRecording(frames) {
 
   let sample;
   if (frames && frames.length > 0) {
-    // Promediar frames capturados
-    const avg = new Float32Array(42);
-    for (const f of frames) for (let i=0;i<42;i++) avg[i] += f[i];
-    for (let i=0;i<42;i++) avg[i] /= frames.length;
+    // Promediar frames capturados (84 valores: 42 por mano izquierda + 42 por mano derecha)
+    const avg = new Float32Array(84);
+    for (const f of frames) for (let i=0;i<84;i++) avg[i] += f[i];
+    for (let i=0;i<84;i++) avg[i] /= frames.length;
     sample = avg;
   } else if (recStaticLm) {
     sample = new Float32Array(recStaticLm);
@@ -1216,7 +1197,7 @@ function extractLandmarksFromFile(file, detector) {
       detector.onResults = results => {
         URL.revokeObjectURL(url);
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-          resolve(normalizeLandmarks(results.multiHandLandmarks[0]));
+          resolve(normalizeLandmarks(results.multiHandLandmarks, results.multiHandedness));
         } else {
           resolve(null);
         }
