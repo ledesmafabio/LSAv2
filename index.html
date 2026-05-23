@@ -604,17 +604,30 @@ function normalizeDictEntry(entry) {
 
 // Función optimizada para guardar datos localmente y subirlos a la nube
 function saveDict(d) {
-  // 1. Guardar copia local de respaldo rápido
-  localStorage.setItem(STORE_KEY, JSON.stringify(d));
+  // 1. Crear una copia limpia convirtiendo cualquier Float32Array a Array común de JS
+  const cleanDict = {};
+  for (const [key, entry] of Object.entries(d)) {
+    cleanDict[key] = {
+      type: entry.type,
+      samples: entry.type === 'static'
+        ? entry.samples.map(s => Array.from(s))
+        : entry.samples.map(seq => seq.map(f => Array.from(f)))
+    };
+  }
+
+  // 2. Guardar copia local de respaldo con formato limpio
+  localStorage.setItem(STORE_KEY, JSON.stringify(cleanDict));
   
-  // 2. Subir a Firestore convertido en texto JSON estructurado
+  // 3. Subir a Firestore como texto JSON perfectamente estructurado
   db.collection('diccionarios').doc('lsa_general').set({
-    gestos: JSON.stringify(d),
+    gestos: JSON.stringify(cleanDict),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   })
-  .then(() => console.log("☁️ Base de datos sincronizada con éxito en Firestore."))
+  .then(() => {
+    console.log("☁️ Base de datos sincronizada con éxito en Firestore.");
+  })
   .catch(err => {
-    console.error("Error al subir a Firestore:", err);
+    console.error("Error crítico al subir a Firestore:", err);
     showToast('⚠️ Error al guardar en la nube');
   });
 }
